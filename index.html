@@ -1,4 +1,124 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mijn Gemini Chatbot</title>
+    <!-- Tailwind CSS voor snelle, strakke styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col justify-between">
+
+    <!-- Header -->
+    <header class="bg-white shadow p-4 text-center font-bold text-lg text-gray-800">
+        Gemini HTML Chatbot
+    </header>
+
+    <!-- Chat Venster -->
+    <div id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl w-full mx-auto">
+        <!-- Welkomstbericht van de bot -->
+        <div class="flex justify-start">
+            <div class="bg-white text-gray-800 p-3 rounded-lg shadow max-w-md">
+                Hoi! Ik ben je gekoppelde Gemini-assistent. Waar kan ik je vandaag mee helpen?
+            </div>
+        </div>
+    </div>
+
+    <!-- Invoer Formulier -->
+    <div class="bg-white border-t p-4 shadow-lg">
+        <form id="chat-form" class="max-w-2xl mx-auto flex gap-2">
+            <input type="text" id="user-input" placeholder="Typ je bericht hier..." 
+                   class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+            <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
+                Verstuur
+            </button>
+        </form>
+    </div>
+
+    <!-- JavaScript Logica -->
+    <script>
+        // PLAATS HIER JE EIGEN API SLEUTEL (Let op: alleen veilig voor lokaal testen / privé-apps)
+        const apiKey = "AQ.Ab8RN6KfIpjUnBpl7gNftkgYFxGytEtrAY-s-c8Zy94_uDmEow"; 
+        
+        const chatContainer = document.getElementById('chat-container');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+
+        // Houd de conversatiegeschiedenis bij zodat de bot context onthoudt
+        let chatHistory = [];
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // 1. Toon gebruikersbericht in de chat
+            appendMessage(message, 'user');
+            userInput.value = '';
+            
+            // Voeg toe aan geschiedenis
+            chatHistory.push({ role: "user", parts: [{ text: message }] });
+
+            // 2. Toon tijdelijk 'denken...' bericht
+            const loadingId = appendMessage('Gemini denkt na...', 'model', true);
+
+            try {
+                // 3. Stuur verzoek naar de Gemini API (gebruikt hier gemini-1.5-flash voor snelheid)
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: chatHistory })
+                });
+
+                const data = await response.json();
+                
+                // Verwijder het 'denken...' bericht
+                document.getElementById(loadingId).remove();
+
+                if (data.candidates && data.candidates[0].content) {
+                    const botReply = data.candidates[0].content.parts[0].text;
+                    appendMessage(botReply, 'model');
+                    
+                    // Voeg antwoord toe aan de geschiedenis
+                    chatHistory.push({ role: "model", parts: [{ text: botReply }] });
+                } else {
+                    appendMessage('Er ging iets mis bij het ophalen van het antwoord.', 'model');
+                }
+            } catch (error) {
+                document.getElementById(loadingId).remove();
+                appendMessage('Kan geen verbinding maken met de API.', 'model');
+                console.error(error);
+            }
+        });
+
+        function appendMessage(text, sender, isLoading = false) {
+            const messageId = 'msg-' + Date.now();
+            const isUser = sender === 'user';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.id = messageId;
+            messageDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+
+            const innerDiv = document.createElement('div');
+            innerDiv.className = `p-3 rounded-lg shadow max-w-md ${isUser ? 'bg-blue-600 text-white' : 'bg-white text-gray-800'}`;
+            
+            if (isLoading) {
+                innerDiv.classList.add('italic', 'text-gray-500');
+            }
+            
+            innerDiv.innerText = text;
+            messageDiv.appendChild(innerDiv);
+            chatContainer.appendChild(messageDiv);
+            
+            // Scroll automatisch naar beneden
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            return messageId;
+        }
+    </script>
+</body>
+</html>
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
