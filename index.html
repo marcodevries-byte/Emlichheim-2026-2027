@@ -24,7 +24,7 @@
 
     /* Spelers weergave */
     .player-chip {
-      display: inline-inline;
+      display: inline-block;
       background: #f1f3f4;
       border: 1px solid #dadce0;
       border-radius: 14px;
@@ -380,7 +380,7 @@
       if (event.target === modal) modal.style.display = "none";
     };
 
-    // Export naar agenda (.ics)
+    // Export naar agenda (.ics) met 09:30 - 11:00 uur
     window.exportToCalendar = function() {
       const query = document.getElementById('searchInput').value.trim().toLowerCase();
       const subs = getSubs();
@@ -442,6 +442,7 @@
 
       eventsToExport.forEach(ev => {
         const cleanDate = ev.date.replace(/-/g, '');
+        // DTSTART 09:30:00 en DTEND 11:00:00
         const dtStart = `${cleanDate}T093000`;
         const dtEnd = `${cleanDate}T110000`;
         const uid = `tennis-${cleanDate}-${Math.random().toString(36).substring(2, 9)}@emlichheim`;
