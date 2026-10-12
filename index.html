@@ -4,17 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Winter Tennis Emlichheim</title>
- <!-- PWA Manifest -->
-  <link rel="manifest" href="manifest.json">
-  
-  <!-- Kleur van de statusbalk op mobiel -->
-  <meta name="theme-color" content="#2e7d32">
 
-  <!-- Specifieke instellingen voor Apple iPhone / iPad (iOS) -->
+  <!-- PWA & Mobiel configuratie -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2e7d32">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Tennis">
   <link rel="apple-touch-icon" href="icon-192.png">
+
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -71,12 +69,11 @@
       outline: none; 
       box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
     }
-    .btn-calendar { 
+    .btn-action { 
       display: block; 
       width: 100%; 
       margin-top: 8px; 
-      padding: 10px; 
-      background: #1565c0; 
+      padding: 11px; 
       color: #fff; 
       border: none; 
       border-radius: 20px; 
@@ -85,8 +82,23 @@
       cursor: pointer; 
       box-shadow: 0 2px 4px rgba(0,0,0,0.15); 
     }
+    .btn-calendar { background: #1565c0; }
     .btn-calendar:hover { background: #0d47a1; }
+    .btn-whatsapp { background: #25d366; }
+    .btn-whatsapp:hover { background: #1ebe5d; }
     
+    .btn-wa-card {
+      float: right;
+      background: #25d366;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 3px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
     .summary-card { 
       background: #e3f2fd; 
       border: 1px solid #90caf9; 
@@ -101,7 +113,7 @@
       font-size: 16px; 
     }
 
-    /* Spelers chips & wisselstatus */
+    /* Spelerschips & Chauffeurs */
     .player-chip {
       display: inline-block;
       background: #f1f3f4;
@@ -114,6 +126,11 @@
       user-select: none;
     }
     .player-chip:hover { background: #e2e5e9; }
+    .player-chip.is-driver {
+      background: #fff8e1;
+      border-color: #ffe082;
+      font-weight: 600;
+    }
     .player-chip.is-subbed {
       background: #fce8e6;
       border-color: #f28b82;
@@ -153,19 +170,22 @@
 <body>
 
   <h1 style="text-align: center; font-size: 20px; margin-bottom: 4px;">🎾 Winter Tennis 2026–2027</h1>
-  <p style="text-align: center; color: #666; font-size: 12px; margin-top: 0;">Emlichheim | 09:30 – 11:00 uur</p>
+  <p style="text-align: center; color: #666; font-size: 12px; margin-top: 0;">Emlichheim | 09:30 – 11:00 uur (vertrek ca. 09:05)</p>
 
   <div class="search-container">
     <input type="text" id="searchInput" class="search-input" placeholder="🔍 Zoek op jouw naam..." onkeyup="filterSchedule()">
-    <button id="exportCalBtn" class="btn-calendar" onclick="exportToCalendar()">
+    <button id="exportCalBtn" class="btn-action btn-calendar" onclick="exportToCalendar()">
       📅 Voeg alle speeldagen toe aan Agenda (.ics)
+    </button>
+    <button id="shareWaBtn" class="btn-action btn-whatsapp" onclick="shareNextRoundWhatsApp()">
+      💬 Deel komende speelronde op WhatsApp
     </button>
   </div>
 
   <div id="summaryCard" class="summary-card"></div>
   <div id="schedule"></div>
 
-  <!-- Modal voor wissel/vervanging -->
+  <!-- Modal voor speler vervangen -->
   <div id="sub-modal" class="modal-overlay">
     <div class="modal-box">
       <h3>Speler wisselen</h3>
@@ -263,17 +283,19 @@
       const subs = getSubs()[dateStr] || {};
       const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
 
-      return names.map(origName => {
+      return names.map((origName, idx) => {
         const sub = subs[origName];
         const isSubbed = !!sub;
+        const isDriver = (idx === 0);
         const displayText = isSubbed ? `${sub} (i.p.v. ${origName})` : origName;
 
         return `
-          <span class="player-chip ${isSubbed ? 'is-subbed' : ''}" 
+          <span class="player-chip ${isDriver ? 'is-driver' : ''} ${isSubbed ? 'is-subbed' : ''}" 
                 onclick="openSubModal('${dateStr}', '${origName.replace(/'/g, "\\'")}')"
                 data-active-name="${isSubbed ? sub : origName}"
-                data-original-name="${origName}">
-            ${displayText} <span class="swap-icon">🔄</span>
+                data-original-name="${origName}"
+                data-is-driver="${isDriver}">
+            ${isDriver ? '<span title="Chauffeur">🚘 </span>' : ''}${displayText} <span class="swap-icon">🔄</span>
           </span>
         `;
       }).join(' ');
@@ -295,6 +317,7 @@
 
         card.innerHTML = `
           ${isNext ? '<span class="badge">VOLGENDE SPEELRONDE</span>' : ''}
+          <button class="btn-wa-card" onclick="shareToWhatsApp('${item.d}')">💬 Deel</button>
           <h2>Zondag ${formattedDate}</h2>
           <div class="group">
             <span class="label">🚗 Auto 1 (Baan 1):</span> 
@@ -317,6 +340,7 @@
       const query = document.getElementById('searchInput').value.trim().toLowerCase();
       const exportBtn = document.getElementById('exportCalBtn');
       let playCount = 0;
+      let driveCount = 0;
 
       if (query !== "") {
         exportBtn.innerText = `📅 Voeg speeldagen voor "${query}" toe aan Agenda`;
@@ -333,11 +357,15 @@
         } else {
           const chips = card.querySelectorAll('.player-chip');
           let match = false;
+
           chips.forEach(chip => {
             const activeName = (chip.getAttribute('data-active-name') || '').toLowerCase();
             const origName = (chip.getAttribute('data-original-name') || '').toLowerCase();
+            const isDriver = chip.getAttribute('data-is-driver') === "true";
+
             if (activeName.includes(query) || origName.includes(query)) {
               match = true;
+              if (isDriver) driveCount++;
             }
           });
 
@@ -355,6 +383,7 @@
         summaryCard.innerHTML = `
           <h3>Speeloverzicht voor "${query}"</h3>
           <div>🎾 <b>Totaal te tennissen:</b> ${playCount} zondagen</div>
+          <div style="margin-top:4px;">🚘 <b>Aantal keren chauffeur:</b> ${driveCount} keer</div>
         `;
       } else {
         summaryCard.style.display = "none";
@@ -458,7 +487,48 @@
       if (event.target === modal) modal.style.display = "none";
     };
 
-    // Export naar agenda (.ics) - met harde VTIMEZONE Europe/Amsterdam
+    // Helper voor WhatsApp-tekst
+    function getCleanNamesWithDriver(namesStr, dateStr) {
+      if (!namesStr) return "Niemand";
+      const subs = getSubs()[dateStr] || {};
+      const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
+      
+      return names.map((orig, idx) => {
+        const sub = subs[orig];
+        const nameText = sub ? `${sub} (i.p.v. ${orig})` : orig;
+        return (idx === 0) ? `🚘 ${nameText} (rijdt)` : nameText;
+      }).join(', ');
+    }
+
+    function generateWhatsAppText(item) {
+      const formattedDate = item.d.split('-').reverse().join('-');
+      const auto1 = getCleanNamesWithDriver(item.a1, item.d);
+      const auto2 = getCleanNamesWithDriver(item.a2, item.d);
+      const vrij = item.v ? item.v.split(',').map(s => s.trim()).filter(Boolean).join(', ') : 'Niemand';
+
+      return `🎾 *Winter Tennis Emlichheim*\n` +
+             `📅 *Zondag ${formattedDate}* (09:30 - 11:00 uur)\n` +
+             `⏰ *Vertrek ca. 09:05 uur*\n\n` +
+             `🚗 *Auto 1 (Baan 1):*\n${auto1}\n\n` +
+             `🚗 *Auto 2 (Baan 2):*\n${auto2}\n\n` +
+             `☕ *Vrij:* ${vrij}`;
+    }
+
+    window.shareToWhatsApp = function(dateStr) {
+      const item = schema.find(s => s.d === dateStr);
+      if (!item) return;
+      const text = generateWhatsAppText(item);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    window.shareNextRoundWhatsApp = function() {
+      const nextItem = schema.find(item => item.d >= today) || schema[0];
+      const text = generateWhatsAppText(nextItem);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    // Export naar agenda (.ics) - Zuivere Floating Local Time (09:30 - 11:00)
+    // Zonder 'Z' en zonder offset zodat iPhone en Google Calendar NOOIT verschuiven!
     window.exportToCalendar = function() {
       const query = document.getElementById('searchInput').value.trim().toLowerCase();
       const subs = getSubs();
@@ -468,9 +538,9 @@
         const getActivePlayers = (str) => {
           if (!str) return [];
           const orig = str.split(',').map(s => s.trim()).filter(Boolean);
-          return orig.map(p => {
+          return orig.map((p, idx) => {
             const sub = subs[item.d] && subs[item.d][p];
-            return { name: sub || p, original: p };
+            return { name: sub || p, original: p, isDriver: idx === 0 };
           });
         };
 
@@ -482,17 +552,20 @@
 
         if (query === "") {
           userRole = "Tennis Emlichheim";
-          courtInfo = `Auto 1 (Baan 1): ${team1.map(p => p.name).join(', ')}\\nAuto 2 (Baan 2): ${team2.map(p => p.name).join(', ')}`;
+          courtInfo = `Auto 1 (Baan 1): ${team1.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}\\n` +
+                      `Auto 2 (Baan 2): ${team2.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}`;
         } else {
           const inT1 = team1.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
           const inT2 = team2.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
 
           if (inT1) {
-            userRole = "Baan 1 (Auto 1)";
-            courtInfo = `Spelers Auto 1: ${team1.map(p => p.name).join(', ')}`;
+            const me = team1.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+            userRole = me && me.isDriver ? "Baan 1 (JIJ RIJDT 🚘)" : "Baan 1 (Auto 1)";
+            courtInfo = `Chauffeur: ${team1[0] ? team1[0].name : '-'}\\nSpelers Auto 1: ${team1.map(p => p.name).join(', ')}`;
           } else if (inT2) {
-            userRole = "Baan 2 (Auto 2)";
-            courtInfo = `Spelers Auto 2: ${team2.map(p => p.name).join(', ')}`;
+            const me = team2.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+            userRole = me && me.isDriver ? "Baan 2 (JIJ RIJDT 🚘)" : "Baan 2 (Auto 2)";
+            courtInfo = `Chauffeur: ${team2[0] ? team2[0].name : '-'}\\nSpelers Auto 2: ${team2.map(p => p.name).join(', ')}`;
           }
         }
 
@@ -515,24 +588,7 @@
         "VERSION:2.0",
         "PRODID:-//Winter Tennis Emlichheim//NL",
         "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH",
-        "BEGIN:VTIMEZONE",
-        "TZID:Europe/Amsterdam",
-        "BEGIN:STANDARD",
-        "DTSTART:19701025T030000",
-        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU",
-        "TZOFFSETFROM:+0200",
-        "TZOFFSETTO:+0100",
-        "TZNAME:CET",
-        "END:STANDARD",
-        "BEGIN:DAYLIGHT",
-        "DTSTART:19700329T020000",
-        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
-        "TZOFFSETFROM:+0100",
-        "TZOFFSETTO:+0200",
-        "TZNAME:CEST",
-        "END:DAYLIGHT",
-        "END:VTIMEZONE"
+        "METHOD:PUBLISH"
       ];
 
       eventsToExport.forEach(ev => {
@@ -542,9 +598,8 @@
         icsLines.push(
           "BEGIN:VEVENT",
           `UID:${uid}`,
-          `DTSTAMP:${cleanDate}T000000Z`,
-          `DTSTART;TZID=Europe/Amsterdam:${cleanDate}T093000`,
-          `DTEND;TZID=Europe/Amsterdam:${cleanDate}T110000`,
+          `DTSTART:${cleanDate}T093000`,
+          `DTEND:${cleanDate}T110000`,
           `SUMMARY:🎾 Winter Tennis (${ev.role})`,
           `DESCRIPTION:${ev.details}`,
           "LOCATION:Tennis Emlichheim",
@@ -570,8 +625,14 @@
       document.body.removeChild(downloadLink);
     };
 
+    // Service Worker registratie voor PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+
     renderSchedule();
   </script>
 </body>
 </html>
-
