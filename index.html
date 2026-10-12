@@ -1,24 +1,4 @@
 <!DOCTYPE html>
-<!-- Container voor het schema -->
-<div id="schedule-container"></div>
-
-<!-- Modal / Popup voor wisselen -->
-<div id="sub-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-  <div style="background:#fff; padding:20px; border-radius:8px; max-width:320px; width:90%; color:#222;">
-    <h3 style="margin-top:0;">Speler vervangen</h3>
-    <p>Vervang <strong id="modal-player-name"></strong>:</p>
-    
-    <label for="sub-select" style="display:block; margin-bottom:6px; font-size:14px;">Kies reservespeler:</label>
-    <select id="sub-select" style="width:100%; padding:8px; margin-bottom:14px; border-radius:4px; border:1px solid #ccc;"></select>
-    
-    <div style="display:flex; justify-content:space-between; gap:8px;">
-      <button id="btn-cancel" style="padding:8px 12px; border:1px solid #ccc; background:#f5f5f5; border-radius:4px; cursor:pointer;">Annuleren</button>
-      <button id="btn-reset" style="padding:8px 12px; border:none; background:#d9534f; color:#fff; border-radius:4px; cursor:pointer;">Herstel origineel</button>
-      <button id="btn-save" style="padding:8px 12px; border:none; background:#28a745; color:#fff; border-radius:4px; cursor:pointer;">Opslaan</button>
-    </div>
-  </div>
-</div>
-
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
@@ -30,7 +10,7 @@
     .next { border: 2px solid #2e7d32; background: #e8f5e9; }
     .badge { display: inline-block; background: #2e7d32; color: white; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 8px; }
     h2 { margin: 0 0 10px 0; color: #1b5e20; font-size: 18px; }
-    .group { margin-bottom: 6px; font-size: 14px; }
+    .group { margin-bottom: 8px; font-size: 14px; line-height: 1.5; }
     .label { font-weight: bold; }
     
     .search-container { position: sticky; top: 10px; z-index: 100; margin-bottom: 15px; }
@@ -38,6 +18,55 @@
     .summary-card { background: #e3f2fd; border: 1px solid #90caf9; border-radius: 12px; padding: 15px; margin-bottom: 15px; display: none; }
     .summary-card h3 { margin: 0 0 8px 0; color: #1565c0; font-size: 16px; }
     .highlight { background-color: #fff59d; padding: 2px 4px; border-radius: 4px; font-weight: bold; }
+
+    /* Stijlen voor wissels */
+    .player-chip {
+      display: inline-flex;
+      align-items: center;
+      background: #f1f3f4;
+      border: 1px solid #dadce0;
+      border-radius: 16px;
+      padding: 2px 8px;
+      margin: 2px 3px 2px 0;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .player-chip:hover { background: #e8eaed; }
+    .player-chip.is-subbed {
+      background: #fce8e6;
+      border-color: #f28b82;
+      color: #c5221f;
+      font-weight: 500;
+    }
+    .swap-icon { font-size: 10px; margin-left: 4px; opacity: 0.6; }
+    
+    /* Modal stijlen */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(2px);
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .modal-box {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 320px;
+      width: 90%;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      box-sizing: border-box;
+    }
+    .modal-box h3 { margin: 0 0 10px 0; font-size: 17px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 15px; }
+    .btn { padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; }
+    .btn-cancel { background: #eee; color: #333; }
+    .btn-reset { background: #fce8e6; color: #c5221f; }
+    .btn-save { background: #2e7d32; color: #fff; }
   </style>
 </head>
 <body>
@@ -52,11 +81,32 @@
   <div id="summaryCard" class="summary-card"></div>
   <div id="schedule"></div>
 
+  <!-- Modal voor wissel/vervanging -->
+  <div id="sub-modal" class="modal-overlay">
+    <div class="modal-box">
+      <h3>Speler wisselen</h3>
+      <p style="font-size: 14px; margin-bottom: 12px;">Vervanger voor <strong id="modal-player-name"></strong>:</p>
+      
+      <label for="sub-select" style="display:block; margin-bottom: 6px; font-size: 13px; color: #555;">Kies reservespeler:</label>
+      <select id="sub-select" style="width: 100%; padding: 8px; margin-bottom: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;"></select>
+      
+      <div id="custom-sub-wrap" style="display:none; margin-bottom: 12px;">
+        <input type="text" id="custom-sub-input" placeholder="Naam externe invaller..." style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; font-size: 14px;">
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-cancel" id="btn-cancel">Sluiten</button>
+        <button type="button" class="btn btn-reset" id="btn-reset" title="Originele speler herstellen">Herstel</button>
+        <button type="button" class="btn btn-save" id="btn-save">Opslaan</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const schema = [
       { d: "2026-09-27", a1: "Marco, Erik, Berjo, Rudie", a2: "Geert, Jan, Kasper, Koos", v: "Han, Henk, Jorrit" },
-      { d: "2026-10-04", a1: "Han, Rudie, Marco, Kasper", a2: "Geert, Koos, Berjo, Fré", v: "Henk, Jan," },
-      { d: "2026-10-11", a1: "Geert, fré, Kasper, Henk", a2: "Marco, Rudie, Erik, Berjo", v: " , " },
+      { d: "2026-10-04", a1: "Han, Rudie, Marco, Kasper", a2: "Geert, Koos, Berjo, Fré", v: "Henk, Jan" },
+      { d: "2026-10-11", a1: "Geert, Fré, Kasper, Henk", a2: "Marco, Rudie, Erik, Berjo", v: "" },
       { d: "2026-10-18", a1: "Henk, Fré, Kasper, Jan", a2: "Berjo, Erik, Geert, Koos", v: "Han, Rudie, Marco, Jorrit" },
       { d: "2026-10-25", a1: "Han, Rudie, Henk, Erik", a2: "Marco, Jorrit, Berjo, Fré", v: "Geert, Jan, Kasper, Koos" },
       { d: "2026-11-01", a1: "Henk, Jan, Han, Rudie", a2: "Kasper, Koos, Marco, Jorrit", v: "Geert, Erik, Berjo, Fré" },
@@ -86,9 +136,64 @@
       { d: "2027-04-18", a1: "Geert, Jan, Kasper, Rudie", a2: "Han, Koos, Marco, Jorrit", v: "Henk, Erik, Berjo, Fré" }
     ];
 
+    // Alle vaste spelers in de poule
+    const VASTE_SPELERS = [
+      "Marco", "Erik", "Berjo", "Rudie", "Geert", 
+      "Jan", "Kasper", "Koos", "Han", "Henk", "Jorrit", "Fré"
+    ];
+
     const today = new Date().toISOString().split('T')[0];
     const container = document.getElementById('schedule');
     const summaryCard = document.getElementById('summaryCard');
+
+    // Overrides ophalen en bewaren via localStorage
+    function getSubs() {
+      const stored = localStorage.getItem("emlichheim_tennis_subs");
+      return stored ? JSON.parse(stored) : {};
+    }
+
+    function setSub(dateStr, originalName, newName) {
+      const subs = getSubs();
+      if (!subs[dateStr]) subs[dateStr] = {};
+      subs[dateStr][originalName] = newName;
+      localStorage.setItem("emlichheim_tennis_subs", JSON.stringify(subs));
+      renderSchedule();
+      filterSchedule();
+    }
+
+    function removeSub(dateStr, originalName) {
+      const subs = getSubs();
+      if (subs[dateStr] && subs[dateStr][originalName]) {
+        delete subs[dateStr][originalName];
+        if (Object.keys(subs[dateStr]).length === 0) delete subs[dateStr];
+        localStorage.setItem("emlichheim_tennis_subs", JSON.stringify(subs));
+      }
+      renderSchedule();
+      filterSchedule();
+    }
+
+    // Chips genereren voor spelers
+    function renderPlayerChips(namesStr, dateStr, groupKey) {
+      if (!namesStr) return "";
+      const subs = getSubs()[dateStr] || {};
+      const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
+
+      return names.map(origName => {
+        const sub = subs[origName];
+        const isSubbed = !!sub;
+        const displayText = isSubbed ? `${sub} (i.p.v. ${origName})` : origName;
+
+        return `
+          <span class="player-chip ${isSubbed ? 'is-subbed' : ''}" 
+                onclick="openSubModal('${dateStr}', '${origName}')"
+                data-active-name="${isSubbed ? sub : origName}"
+                data-original-name="${origName}"
+                title="Klik om te vervangen">
+            ${displayText} <span class="swap-icon">🔄</span>
+          </span>
+        `;
+      }).join(' ');
+    }
 
     function renderSchedule() {
       container.innerHTML = '';
@@ -103,9 +208,18 @@
         card.innerHTML = `
           ${isNext ? '<span class="badge">VOLGENDE SPEELRONDE</span>' : ''}
           <h2>Zondag ${formattedDate}</h2>
-          <div class="group"><span class="label">🚗 Auto 1 (Baan 1):</span> <span class="val-a1">${item.a1}</span></div>
-          <div class="group"><span class="label">🚗 Auto 2 (Baan 2):</span> <span class="val-a2">${item.a2}</span></div>
-          <div class="group"><span class="label">☕ Vrij:</span> <span class="val-v">${item.v}</span></div>
+          <div class="group">
+            <span class="label">🚗 Auto 1 (Baan 1):</span> 
+            <span class="val-a1">${renderPlayerChips(item.a1, item.d, 'a1')}</span>
+          </div>
+          <div class="group">
+            <span class="label">🚗 Auto 2 (Baan 2):</span> 
+            <span class="val-a2">${renderPlayerChips(item.a2, item.d, 'a2')}</span>
+          </div>
+          <div class="group">
+            <span class="label">☕ Vrij:</span> 
+            <span class="val-v">${item.v || 'Niemand'}</span>
+          </div>
         `;
         container.appendChild(card);
       });
@@ -123,19 +237,23 @@
 
       schema.forEach((item, index) => {
         const card = document.getElementById(`card-${index}`);
-        const a1Match = item.a1.toLowerCase().includes(query);
-        const a2Match = item.a2.toLowerCase().includes(query);
+        const activeChips = card.querySelectorAll('.player-chip');
+        
+        let matchFound = false;
+
+        activeChips.forEach(chip => {
+          const activeName = chip.getAttribute('data-active-name').toLowerCase();
+          const origName = chip.getAttribute('data-original-name').toLowerCase();
+          
+          if (query !== "" && (activeName.includes(query) || origName.includes(query))) {
+            matchFound = true;
+          }
+        });
 
         if (query === "") {
           card.style.display = "block";
-          card.querySelector('.val-a1').innerHTML = item.a1;
-          card.querySelector('.val-a2').innerHTML = item.a2;
-          card.querySelector('.val-v').innerHTML = item.v;
-        } else if (a1Match || a2Match) {
+        } else if (matchFound) {
           card.style.display = "block";
-          card.querySelector('.val-a1').innerHTML = highlightText(item.a1, query);
-          card.querySelector('.val-a2').innerHTML = highlightText(item.a2, query);
-          card.querySelector('.val-v').innerHTML = item.v;
           playCount++;
         } else {
           card.style.display = "none";
@@ -153,6 +271,112 @@
       }
     }
 
+    // Modal bediening
+    let curDate = null;
+    let curOriginalPlayer = null;
+
+    window.openSubModal = function(dateStr, originalPlayer) {
+      curDate = dateStr;
+      curOriginalPlayer = originalPlayer;
+
+      const scheduleItem = schema.find(s => s.d === dateStr);
+      const subs = getSubs()[dateStr] || {};
+      const freePlayers = (scheduleItem.v || '').split(',').map(s => s.trim()).filter(Boolean);
+
+      document.getElementById('modal-player-name').innerText = originalPlayer;
+      const select = document.getElementById('sub-select');
+      const customWrap = document.getElementById('custom-sub-wrap');
+      const customInput = document.getElementById('custom-sub-input');
+      
+      select.innerHTML = '';
+      customWrap.style.display = 'none';
+      customInput.value = '';
+
+      // 1. Spelers die deze zondag vrij zijn (voorkeursoptie)
+      if (freePlayers.length > 0) {
+        const optGroupFree = document.createElement('optgroup');
+        optGroupFree.label = "Vrij deze zondag";
+        freePlayers.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p;
+          opt.innerText = `${p} (heeft vrij)`;
+          optGroupFree.appendChild(opt);
+        });
+        select.appendChild(optGroupFree);
+      }
+
+      // 2. Alle overige spelers
+      const optGroupAll = document.createElement('optgroup');
+      optGroupAll.label = "Overige spelers";
+      VASTE_SPELERS.filter(p => p !== originalPlayer && !freePlayers.includes(p)).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.innerText = p;
+        optGroupAll.appendChild(opt);
+      });
+      select.appendChild(optGroupAll);
+
+      // 3. Externe invaller optie
+      const optCustom = document.createElement('option');
+      optCustom.value = "__custom__";
+      optCustom.innerText = "➕ Externe invaller typen...";
+      select.appendChild(optCustom);
+
+      select.onchange = () => {
+        customWrap.style.display = select.value === "__custom__" ? "block" : "none";
+        if (select.value === "__custom__") customInput.focus();
+      };
+
+      // Bestaande wissel voorselecteren als die er is
+      if (subs[originalPlayer]) {
+        const currentSub = subs[originalPlayer];
+        const matchOption = Array.from(select.options).find(o => o.value === currentSub);
+        if (matchOption) {
+          select.value = currentSub;
+        } else {
+          select.value = "__custom__";
+          customWrap.style.display = "block";
+          customInput.value = currentSub;
+        }
+      }
+
+      document.getElementById('sub-modal').style.display = 'flex';
+    };
+
+    document.getElementById('btn-cancel').onclick = () => {
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    document.getElementById('btn-save').onclick = () => {
+      const select = document.getElementById('sub-select');
+      let chosenName = select.value;
+
+      if (chosenName === "__custom__") {
+        chosenName = document.getElementById('custom-sub-input').value.trim();
+        if (!chosenName) {
+          alert("Vul a.u.b. een naam in voor de invaller.");
+          return;
+        }
+      }
+
+      setSub(curDate, curOriginalPlayer, chosenName);
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    document.getElementById('btn-reset').onclick = () => {
+      removeSub(curDate, curOriginalPlayer);
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    // Sluiten bij klikken buiten het venster
+    window.onclick = function(event) {
+      const modal = document.getElementById('sub-modal');
+      if (event.target === modal) {
+        modal.style.display = "none";
+      }
+    };
+
+    // Eerste weergave initialiseren
     renderSchedule();
   </script>
 </body>
