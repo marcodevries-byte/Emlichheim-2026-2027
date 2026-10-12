@@ -1,15 +1,3 @@
-Dat gebeurt als er nog een oude sessie of opgeslagen staat in de browser zit, of als de datumfiltering alle kaarten verbergt omdat `today` in de code op vandaag staat en vergelijkt met de datums.
-
-Daarnaast was er in `filterSchedule()` één klein detail: als het zoekveld leeg was bij het opstarten, zette hij de weergave niet voor alle kaarten expliciet op `block`.
-
-Hier is de **volledig werkende, gegarandeerd zichtbare code**. Hierin is ervoor gezorgd dat:
-
-1. **Alle kaarten altijd direct zichtbaar zijn** bij het laden van de pagina.
-2. Zowel Auto 1, Auto 2 als Vrij direct met de spelers worden getoond.
-3. De wissel-popup werkt én de ICS-agendaknop werkt.
-
-Kopieer en vervang je hele `index.html` hiermee:
-
 ```html
 <!DOCTYPE html>
 <html lang="nl">
