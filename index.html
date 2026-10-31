@@ -206,7 +206,7 @@
     </div>
   </div>
 
-  <!-- Firebase & App Script -->
+  <!-- Gecombineerd Firebase & Tennis Script -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getFirestore, doc, onSnapshot, setDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
@@ -270,11 +270,14 @@
     let globalSubs = {};
     const subsDocRef = doc(db, "metadata", "subs");
 
-    // Realtime luisteren naar Firestore
+    // Realtime synchronisatie via Firestore
     onSnapshot(subsDocRef, (snap) => {
       globalSubs = snap.exists() ? (snap.data() || {}) : {};
       renderSchedule();
       filterSchedule();
+    }, (error) => {
+      console.warn("Firestore niet bereikbaar, lokaal schema wordt getoond:", error);
+      renderSchedule();
     });
 
     function getSubs() {
@@ -485,8 +488,8 @@
           }
         }, { merge: true });
       } catch (err) {
-        console.error("Fout bij opslaan:", err);
-        alert("Kon de wijziging niet opslaan in de database.");
+        console.error("Fout bij opslaan in Firestore:", err);
+        alert("Kon de wijziging niet opslaan in de database. Controleer de Firebase Security Rules.");
       }
 
       document.getElementById('sub-modal').style.display = 'none';
@@ -614,44 +617,3 @@
       eventsToExport.forEach(ev => {
         const cleanDate = ev.date.replace(/-/g, '');
         const uid = `tennis-${cleanDate}-${Math.random().toString(36).substring(2, 9)}@emlichheim`;
-
-        icsLines.push(
-          "BEGIN:VEVENT",
-          `UID:${uid}`,
-          `DTSTART:${cleanDate}T093000`,
-          `DTEND:${cleanDate}T110000`,
-          `SUMMARY:🎾 Winter Tennis (${ev.role})`,
-          `DESCRIPTION:${ev.details}`,
-          "LOCATION:Tennis Emlichheim",
-          "STATUS:CONFIRMED",
-          "END:VEVENT"
-        );
-      });
-
-      icsLines.push("END:VCALENDAR");
-
-      const icsData = icsLines.join("\r\n");
-      const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8;' });
-      const downloadLink = document.createElement('a');
-
-      const filename = query 
-        ? `tennis-emlichheim-${query}.ics` 
-        : `tennis-emlichheim-volledig.ics`;
-
-      downloadLink.href = URL.createObjectURL(blob);
-      downloadLink.setAttribute('download', filename);
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-    };
-
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(() => {});
-      });
-    }
-
-    renderSchedule();
-  </script>
-</body>
-</html>
