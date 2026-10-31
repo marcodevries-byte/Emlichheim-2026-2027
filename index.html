@@ -206,7 +206,7 @@
     </div>
   </div>
 
-  <!-- 1. Standaard App Logica (Werkt ALTIJD, direct en storingsvrij) -->
+  <!-- Basis UI Script -->
   <script>
     const schema = [
       { d: "2026-09-27", a1: "Marco, Erik, Berjo, Rudie", a2: "Geert, Jan, Kasper, Koos", v: "Han, Henk, Jorrit" },
@@ -255,7 +255,7 @@
     function getSubs() {
       try {
         const local = JSON.parse(localStorage.getItem("emlichheim_tennis_subs") || "{}");
-        return Object.keys(window.globalSubs).length > 0 ? window.globalSubs : local;
+        return (window.globalSubs && Object.keys(window.globalSubs).length > 0) ? window.globalSubs : local;
       } catch(e) {
         return window.globalSubs || {};
       }
@@ -270,7 +270,7 @@
         const sub = subs[origName];
         const isSubbed = !!sub;
         const isDriver = (idx === 0);
-        const displayText = isSubbed ? `${sub} (i.p.v.${origName})` : origName;
+        const displayText = isSubbed ? `${sub} (i.p.v. ${origName})` : origName;
 
         return `
           <span class="player-chip ${isDriver ? 'is-driver' : ''} ${isSubbed ? 'is-subbed' : ''}" 
@@ -295,7 +295,8 @@
         const formattedDate = item.d.split('-').reverse().join('-');
 
         const card = document.createElement('div');
-        card.className = `card ${isNext ? 'next' : ''}`; card.id = `card-${index}`;
+        card.className = `card ${isNext ? 'next' : ''}`;
+        card.id = `card-${index}`;
 
         card.innerHTML = `
           ${isNext ? '<span class="badge">VOLGENDE SPEELRONDE</span>' : ''}
@@ -365,4 +366,331 @@
         summaryCard.innerHTML = `
           <h3>Speeloverzicht voor "${query}"</h3>
           <div>🎾 <b>Totaal te tennissen:</b> ${playCount} zondagen</div>
-          <div style="margin-top:4px;">🚘
+          <div style="margin-top:4px;">🚘 <b>Aantal keren chauffeur:</b> ${driveCount} keer</div>
+        `;
+      } else {
+        summaryCard.style.display = "none";
+      }
+    }
+
+    let curDate = null;
+    let curOriginalPlayer = null;
+
+    window.openSubModal = function(dateStr, originalPlayer) {
+      curDate = dateStr;
+      curOriginalPlayer = originalPlayer;
+
+      const scheduleItem = schema.find(s => s.d === dateStr);
+      const subs = getSubs()[dateStr] || {};
+      const freePlayers = (scheduleItem ? scheduleItem.v : '').split(',').map(s => s.trim()).filter(Boolean);
+
+      document.getElementById('modal-player-name').innerText = originalPlayer;
+      const select = document.getElementById('sub-select');
+      const customWrap = document.getElementById('custom-sub-wrap');
+      const customInput = document.getElementById('custom-sub-input');
+      
+      select.innerHTML = '';
+      customWrap.style.display = 'none';
+      customInput.value = '';
+
+      if (freePlayers.length > 0) {
+        const grpFree = document.createElement('optgroup');
+        grpFree.label = "Vrij deze zondag";
+        freePlayers.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p;
+          opt.innerText = `${p} (vrij)`;
+          grpFree.appendChild(opt);
+        });
+        select.appendChild(grpFree);
+      }
+
+      const grpAll = document.createElement('optgroup');
+      grpAll.label = "Overige spelers";
+      VASTE_SPELERS.filter(p => p !== originalPlayer && !freePlayers.includes(p)).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.innerText = p;
+        grpAll.appendChild(opt);
+      });
+      select.appendChild(grpAll);
+
+      const optCustom = document.createElement('option');
+      optCustom.value = "__custom__";
+      optCustom.innerText = "➕ Externe invaller typen...";
+      select.appendChild(optCustom);
+
+      select.onchange = () => {
+        customWrap.style.display = select.value === "__custom__" ? "block" : "none";
+        if (select.value === "__custom__") customInput.focus();
+      };
+
+      if (subs[originalPlayer]) {
+        const currentSub = subs[originalPlayer];
+        const matchOption = Array.from(select.options).find(o => o.value === currentSub);
+        if (matchOption) {
+          select.value = currentSub;
+        } else {
+          select.value = "__custom__";
+          customWrap.style.display = "block";
+          customInput.value = currentSub;
+        }
+      }
+
+      document.getElementById('sub-modal').style.display = 'flex';
+    };
+
+    document.getElementById('btn-cancel').onclick = () => {
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    document.getElementById('btn-save').onclick = async () => {
+      const select = document.getElementById('sub-select');
+      let chosenName = select.value;
+
+      if (chosenName === "__custom__") {
+        chosenName = document.getElementById('custom-sub-input').value.trim();
+        if (!chosenName) {
+          alert("Vul a.u.b. een naam in voor de invaller.");
+          return;
+        }
+      }
+
+      // 1. Direct lokaal updaten
+      const local = JSON.parse(localStorage.getItem("emlichheim_tennis_subs") || "{}");
+      if (!local[curDate]) local[curDate] = {};
+      local[curDate][curOriginalPlayer] = chosenName;
+      localStorage.setItem("emlichheim_tennis_subs", JSON.stringify(local));
+
+      // 2. Naar Firestore sturen
+      if (window.cloudSaveSub) {
+        await window.cloudSaveSub(curDate, curOriginalPlayer, chosenName);
+      }
+
+      renderSchedule();
+      filterSchedule();
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    document.getElementById('btn-reset').onclick = async () => {
+      // 1. Lokaal herstellen
+      const local = JSON.parse(localStorage.getItem("emlichheim_tennis_subs") || "{}");
+      if (local[curDate] && local[curDate][curOriginalPlayer]) {
+        delete local[curDate][curOriginalPlayer];
+        if (Object.keys(local[curDate]).length === 0) delete local[curDate];
+        localStorage.setItem("emlichheim_tennis_subs", JSON.stringify(local));
+      }
+
+      // 2. Uit Firestore verwijderen
+      if (window.cloudRemoveSub) {
+        await window.cloudRemoveSub(curDate, curOriginalPlayer);
+      }
+
+      renderSchedule();
+      filterSchedule();
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    window.onclick = function(event) {
+      const modal = document.getElementById('sub-modal');
+      if (event.target === modal) modal.style.display = "none";
+    };
+
+    function getCleanNamesWithDriver(namesStr, dateStr) {
+      if (!namesStr) return "Niemand";
+      const subs = getSubs()[dateStr] || {};
+      const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
+      
+      return names.map((orig, idx) => {
+        const sub = subs[orig];
+        const nameText = sub ? `${sub} (i.p.v. ${orig})` : orig;
+        return (idx === 0) ? `🚘 ${nameText} (rijdt)` : nameText;
+      }).join(', ');
+    }
+
+    function generateWhatsAppText(item) {
+      const formattedDate = item.d.split('-').reverse().join('-');
+      const auto1 = getCleanNamesWithDriver(item.a1, item.d);
+      const auto2 = getCleanNamesWithDriver(item.a2, item.d);
+      const vrij = item.v ? item.v.split(',').map(s => s.trim()).filter(Boolean).join(', ') : 'Niemand';
+
+      return `🎾 *Winter Tennis Emlichheim*\n` +
+             `📅 *Zondag ${formattedDate}* (09:30 - 11:00 uur)\n` +
+             `⏰ *Vertrek ca. 09:05 uur*\n\n` +
+             `🚗 *Auto 1 (Baan 1):*\n${auto1}\n\n` +
+             `🚗 *Auto 2 (Baan 2):*\n${auto2}\n\n` +
+             `☕ *Vrij:* ${vrij}`;
+    }
+
+    window.shareToWhatsApp = function(dateStr) {
+      const item = schema.find(s => s.d === dateStr);
+      if (!item) return;
+      const text = generateWhatsAppText(item);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    window.shareNextRoundWhatsApp = function() {
+      const nextItem = schema.find(item => item.d >= today) || schema[0];
+      const text = generateWhatsAppText(nextItem);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    window.exportToCalendar = function() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const subs = getSubs();
+      let eventsToExport = [];
+
+      schema.forEach(item => {
+        const getActivePlayers = (str) => {
+          if (!str) return [];
+          const orig = str.split(',').map(s => s.trim()).filter(Boolean);
+          return orig.map((p, idx) => {
+            const sub = subs[item.d] && subs[item.d][p];
+            return { name: sub || p, original: p, isDriver: idx === 0 };
+          });
+        };
+
+        const team1 = getActivePlayers(item.a1);
+        const team2 = getActivePlayers(item.a2);
+
+        let userRole = null;
+        let courtInfo = "";
+
+        if (query === "") {
+          userRole = "Tennis Emlichheim";
+          courtInfo = `Auto 1 (Baan 1): ${team1.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}\\n` +
+                      `Auto 2 (Baan 2): ${team2.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}`;
+        } else {
+          const inT1 = team1.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+          const inT2 = team2.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+
+          if (inT1) {
+            const me = team1.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+            userRole = me && me.isDriver ? "Baan 1 (JIJ RIJDT 🚘)" : "Baan 1 (Auto 1)";
+            courtInfo = `Chauffeur: ${team1[0] ? team1[0].name : '-'}\\nSpelers Auto 1: ${team1.map(p => p.name).join(', ')}`;
+          } else if (inT2) {
+            const me = team2.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+            userRole = me && me.isDriver ? "Baan 2 (JIJ RIJDT 🚘)" : "Baan 2 (Auto 2)";
+            courtInfo = `Chauffeur: ${team2[0] ? team2[0].name : '-'}\\nSpelers Auto 2: ${team2.map(p => p.name).join(', ')}`;
+          }
+        }
+
+        if (userRole) {
+          eventsToExport.push({
+            date: item.d,
+            role: userRole,
+            details: courtInfo
+          });
+        }
+      });
+
+      if (eventsToExport.length === 0) {
+        alert("Geen speeldagen gevonden om te exporteren.");
+        return;
+      }
+
+      let icsLines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Winter Tennis Emlichheim//NL",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH"
+      ];
+
+      eventsToExport.forEach(ev => {
+        const cleanDate = ev.date.replace(/-/g, '');
+        const uid = `tennis-${cleanDate}-${Math.random().toString(36).substring(2, 9)}@emlichheim`;
+
+        icsLines.push(
+          "BEGIN:VEVENT",
+          `UID:${uid}`,
+          `DTSTART:${cleanDate}T093000`,
+          `DTEND:${cleanDate}T110000`,
+          `SUMMARY:🎾 Winter Tennis (${ev.role})`,
+          `DESCRIPTION:${ev.details}`,
+          "LOCATION:Tennis Emlichheim",
+          "STATUS:CONFIRMED",
+          "END:VEVENT"
+        );
+      });
+
+      icsLines.push("END:VCALENDAR");
+
+      const icsData = icsLines.join("\r\n");
+      const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8;' });
+      const downloadLink = document.createElement('a');
+
+      const filename = query 
+        ? `tennis-emlichheim-${query}.ics` 
+        : `tennis-emlichheim-volledig.ics`;
+
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.setAttribute('download', filename);
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    };
+
+    // Meteen renderen zodra de browser de DOM klaar heeft
+    renderSchedule();
+  </script>
+
+  <!-- Firebase Cloud Synchronisatie (Draait los op de achtergrond) -->
+  <script type="module">
+    try {
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js");
+      const { getFirestore, doc, onSnapshot, setDoc, deleteField } = await import("https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js");
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyCzdCccjuSuiUykEZD7kl0aA_pR1GPKI8A",
+        authDomain: "wintertennis-2026.firebaseapp.com",
+        projectId: "wintertennis-2026",
+        storageBucket: "wintertennis-2026.firebasestorage.app",
+        messagingSenderId: "458426752365",
+        appId: "1:458426752365:web:28d4e6ae71c0d135d38e64",
+        measurementId: "G-SZB3WDWVZX"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      const subsDocRef = doc(db, "metadata", "subs");
+
+      onSnapshot(subsDocRef, (snap) => {
+        if (snap.exists()) {
+          window.globalSubs = snap.data() || {};
+          renderSchedule();
+          filterSchedule();
+        }
+      }, (err) => {
+        console.warn("Firestore niet bereikbaar:", err);
+      });
+
+      window.cloudSaveSub = async function(dateStr, originalName, newName) {
+        try {
+          await setDoc(subsDocRef, {
+            [dateStr]: {
+              [originalName]: newName
+            }
+          }, { merge: true });
+        } catch (e) {
+          console.error("Cloud opslaan fout:", e);
+        }
+      };
+
+      window.cloudRemoveSub = async function(dateStr, originalName) {
+        try {
+          await setDoc(subsDocRef, {
+            [dateStr]: {
+              [originalName]: deleteField()
+            }
+          }, { merge: true });
+        } catch (e) {
+          console.error("Cloud herstellen fout:", e);
+        }
+      };
+    } catch (e) {
+      console.warn("Firebase niet geladen:", e);
+    }
+  </script>
+</body>
+</html>
