@@ -173,11 +173,11 @@
   <p style="text-align: center; color: #666; font-size: 12px; margin-top: 0;">Emlichheim | 09:30 – 11:00 uur (vertrek ca. 09:05)</p>
 
   <div class="search-container">
-    <input type="text" id="searchInput" class="search-input" placeholder="🔍 Zoek op jouw naam...">
-    <button id="exportCalBtn" class="btn-action btn-calendar">
+    <input type="text" id="searchInput" class="search-input" placeholder="🔍 Zoek op jouw naam..." onkeyup="filterSchedule()">
+    <button id="exportCalBtn" class="btn-action btn-calendar" onclick="exportToCalendar()">
       📅 Voeg alle speeldagen toe aan Agenda (.ics)
     </button>
-    <button id="shareWaBtn" class="btn-action btn-whatsapp">
+    <button id="shareWaBtn" class="btn-action btn-whatsapp" onclick="shareNextRoundWhatsApp()">
       💬 Deel komende speelronde op WhatsApp
     </button>
   </div>
@@ -206,24 +206,8 @@
     </div>
   </div>
 
-  <!-- Gecombineerd Firebase & Tennis Script -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, setDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCzdCccjuSuiUykEZD7kl0aA_pR1GPKI8A",
-      authDomain: "wintertennis-2026.firebaseapp.com",
-      projectId: "wintertennis-2026",
-      storageBucket: "wintertennis-2026.firebasestorage.app",
-      messagingSenderId: "458426752365",
-      appId: "1:458426752365:web:28d4e6ae71c0d135d38e64",
-      measurementId: "G-SZB3WDWVZX"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-
+  <!-- 1. Standaard App Logica (Werkt ALTIJD, direct en storingsvrij) -->
+  <script>
     const schema = [
       { d: "2026-09-27", a1: "Marco, Erik, Berjo, Rudie", a2: "Geert, Jan, Kasper, Koos", v: "Han, Henk, Jorrit" },
       { d: "2026-10-04", a1: "Han, Rudie, Marco, Kasper", a2: "Geert, Koos, Berjo, Fré", v: "Henk, Jan" },
@@ -265,23 +249,16 @@
     const today = new Date().toISOString().split('T')[0];
     const container = document.getElementById('schedule');
     const summaryCard = document.getElementById('summaryCard');
-    const searchInput = document.getElementById('searchInput');
 
-    let globalSubs = {};
-    const subsDocRef = doc(db, "metadata", "subs");
-
-    // Realtime synchronisatie via Firestore
-    onSnapshot(subsDocRef, (snap) => {
-      globalSubs = snap.exists() ? (snap.data() || {}) : {};
-      renderSchedule();
-      filterSchedule();
-    }, (error) => {
-      console.warn("Firestore niet bereikbaar, lokaal schema wordt getoond:", error);
-      renderSchedule();
-    });
+    window.globalSubs = {};
 
     function getSubs() {
-      return globalSubs;
+      try {
+        const local = JSON.parse(localStorage.getItem("emlichheim_tennis_subs") || "{}");
+        return Object.keys(window.globalSubs).length > 0 ? window.globalSubs : local;
+      } catch(e) {
+        return window.globalSubs || {};
+      }
     }
 
     function renderPlayerChips(namesStr, dateStr) {
@@ -293,11 +270,11 @@
         const sub = subs[origName];
         const isSubbed = !!sub;
         const isDriver = (idx === 0);
-        const displayText = isSubbed ? `${sub} (i.p.v. ${origName})` : origName;
+        const displayText = isSubbed ? `${sub} (i.p.v.${origName})` : origName;
 
         return `
           <span class="player-chip ${isDriver ? 'is-driver' : ''} ${isSubbed ? 'is-subbed' : ''}" 
-                onclick="window.openSubModal('${dateStr}', '${origName.replace(/'/g, "\\'")}')"
+                onclick="openSubModal('${dateStr}', '${origName.replace(/'/g, "\\'")}')"
                 data-active-name="${isSubbed ? sub : origName}"
                 data-original-name="${origName}"
                 data-is-driver="${isDriver}">
@@ -318,12 +295,11 @@
         const formattedDate = item.d.split('-').reverse().join('-');
 
         const card = document.createElement('div');
-        card.className = `card ${isNext ? 'next' : ''}`;
-        card.id = `card-${index}`;
+        card.className = `card ${isNext ? 'next' : ''}`; card.id = `card-${index}`;
 
         card.innerHTML = `
           ${isNext ? '<span class="badge">VOLGENDE SPEELRONDE</span>' : ''}
-          <button class="btn-wa-card" onclick="window.shareToWhatsApp('${item.d}')">💬 Deel</button>
+          <button class="btn-wa-card" onclick="shareToWhatsApp('${item.d}')">💬 Deel</button>
           <h2>Zondag ${formattedDate}</h2>
           <div class="group">
             <span class="label">🚗 Auto 1 (Baan 1):</span> 
@@ -343,7 +319,7 @@
     }
 
     function filterSchedule() {
-      const query = searchInput.value.trim().toLowerCase();
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
       const exportBtn = document.getElementById('exportCalBtn');
       let playCount = 0;
       let driveCount = 0;
@@ -389,231 +365,4 @@
         summaryCard.innerHTML = `
           <h3>Speeloverzicht voor "${query}"</h3>
           <div>🎾 <b>Totaal te tennissen:</b> ${playCount} zondagen</div>
-          <div style="margin-top:4px;">🚘 <b>Aantal keren chauffeur:</b> ${driveCount} keer</div>
-        `;
-      } else {
-        summaryCard.style.display = "none";
-      }
-    }
-
-    searchInput.addEventListener('keyup', filterSchedule);
-
-    let curDate = null;
-    let curOriginalPlayer = null;
-
-    window.openSubModal = function(dateStr, originalPlayer) {
-      curDate = dateStr;
-      curOriginalPlayer = originalPlayer;
-
-      const scheduleItem = schema.find(s => s.d === dateStr);
-      const subs = getSubs()[dateStr] || {};
-      const freePlayers = (scheduleItem ? scheduleItem.v : '').split(',').map(s => s.trim()).filter(Boolean);
-
-      document.getElementById('modal-player-name').innerText = originalPlayer;
-      const select = document.getElementById('sub-select');
-      const customWrap = document.getElementById('custom-sub-wrap');
-      const customInput = document.getElementById('custom-sub-input');
-      
-      select.innerHTML = '';
-      customWrap.style.display = 'none';
-      customInput.value = '';
-
-      if (freePlayers.length > 0) {
-        const grpFree = document.createElement('optgroup');
-        grpFree.label = "Vrij deze zondag";
-        freePlayers.forEach(p => {
-          const opt = document.createElement('option');
-          opt.value = p;
-          opt.innerText = `${p} (vrij)`;
-          grpFree.appendChild(opt);
-        });
-        select.appendChild(grpFree);
-      }
-
-      const grpAll = document.createElement('optgroup');
-      grpAll.label = "Overige spelers";
-      VASTE_SPELERS.filter(p => p !== originalPlayer && !freePlayers.includes(p)).forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p;
-        opt.innerText = p;
-        grpAll.appendChild(opt);
-      });
-      select.appendChild(grpAll);
-
-      const optCustom = document.createElement('option');
-      optCustom.value = "__custom__";
-      optCustom.innerText = "➕ Externe invaller typen...";
-      select.appendChild(optCustom);
-
-      select.onchange = () => {
-        customWrap.style.display = select.value === "__custom__" ? "block" : "none";
-        if (select.value === "__custom__") customInput.focus();
-      };
-
-      if (subs[originalPlayer]) {
-        const currentSub = subs[originalPlayer];
-        const matchOption = Array.from(select.options).find(o => o.value === currentSub);
-        if (matchOption) {
-          select.value = currentSub;
-        } else {
-          select.value = "__custom__";
-          customWrap.style.display = "block";
-          customInput.value = currentSub;
-        }
-      }
-
-      document.getElementById('sub-modal').style.display = 'flex';
-    };
-
-    document.getElementById('btn-cancel').onclick = () => {
-      document.getElementById('sub-modal').style.display = 'none';
-    };
-
-    document.getElementById('btn-save').onclick = async () => {
-      const select = document.getElementById('sub-select');
-      let chosenName = select.value;
-
-      if (chosenName === "__custom__") {
-        chosenName = document.getElementById('custom-sub-input').value.trim();
-        if (!chosenName) {
-          alert("Vul a.u.b. een naam in voor de invaller.");
-          return;
-        }
-      }
-
-      try {
-        await setDoc(subsDocRef, {
-          [curDate]: {
-            [curOriginalPlayer]: chosenName
-          }
-        }, { merge: true });
-      } catch (err) {
-        console.error("Fout bij opslaan in Firestore:", err);
-        alert("Kon de wijziging niet opslaan in de database. Controleer de Firebase Security Rules.");
-      }
-
-      document.getElementById('sub-modal').style.display = 'none';
-    };
-
-    document.getElementById('btn-reset').onclick = async () => {
-      try {
-        await setDoc(subsDocRef, {
-          [curDate]: {
-            [curOriginalPlayer]: deleteField()
-          }
-        }, { merge: true });
-      } catch (err) {
-        console.error("Fout bij herstellen:", err);
-      }
-      document.getElementById('sub-modal').style.display = 'none';
-    };
-
-    window.onclick = function(event) {
-      const modal = document.getElementById('sub-modal');
-      if (event.target === modal) modal.style.display = "none";
-    };
-
-    function getCleanNamesWithDriver(namesStr, dateStr) {
-      if (!namesStr) return "Niemand";
-      const subs = getSubs()[dateStr] || {};
-      const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
-      
-      return names.map((orig, idx) => {
-        const sub = subs[orig];
-        const nameText = sub ? `${sub} (i.p.v. ${orig})` : orig;
-        return (idx === 0) ? `🚘 ${nameText} (rijdt)` : nameText;
-      }).join(', ');
-    }
-
-    function generateWhatsAppText(item) {
-      const formattedDate = item.d.split('-').reverse().join('-');
-      const auto1 = getCleanNamesWithDriver(item.a1, item.d);
-      const auto2 = getCleanNamesWithDriver(item.a2, item.d);
-      const vrij = item.v ? item.v.split(',').map(s => s.trim()).filter(Boolean).join(', ') : 'Niemand';
-
-      return `🎾 *Winter Tennis Emlichheim*\n` +
-             `📅 *Zondag ${formattedDate}* (09:30 - 11:00 uur)\n` +
-             `⏰ *Vertrek ca. 09:05 uur*\n\n` +
-             `🚗 *Auto 1 (Baan 1):*\n${auto1}\n\n` +
-             `🚗 *Auto 2 (Baan 2):*\n${auto2}\n\n` +
-             `☕ *Vrij:* ${vrij}`;
-    }
-
-    window.shareToWhatsApp = function(dateStr) {
-      const item = schema.find(s => s.d === dateStr);
-      if (!item) return;
-      const text = generateWhatsAppText(item);
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-    };
-
-    document.getElementById('shareWaBtn').onclick = function() {
-      const nextItem = schema.find(item => item.d >= today) || schema[0];
-      const text = generateWhatsAppText(nextItem);
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-    };
-
-    document.getElementById('exportCalBtn').onclick = function() {
-      const query = searchInput.value.trim().toLowerCase();
-      const subs = getSubs();
-      let eventsToExport = [];
-
-      schema.forEach(item => {
-        const getActivePlayers = (str) => {
-          if (!str) return [];
-          const orig = str.split(',').map(s => s.trim()).filter(Boolean);
-          return orig.map((p, idx) => {
-            const sub = subs[item.d] && subs[item.d][p];
-            return { name: sub || p, original: p, isDriver: idx === 0 };
-          });
-        };
-
-        const team1 = getActivePlayers(item.a1);
-        const team2 = getActivePlayers(item.a2);
-
-        let userRole = null;
-        let courtInfo = "";
-
-        if (query === "") {
-          userRole = "Tennis Emlichheim";
-          courtInfo = `Auto 1 (Baan 1): ${team1.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}\\n` +
-                      `Auto 2 (Baan 2): ${team2.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}`;
-        } else {
-          const inT1 = team1.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
-          const inT2 = team2.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
-
-          if (inT1) {
-            const me = team1.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
-            userRole = me && me.isDriver ? "Baan 1 (JIJ RIJDT 🚘)" : "Baan 1 (Auto 1)";
-            courtInfo = `Chauffeur: ${team1[0] ? team1[0].name : '-'}\\nSpelers Auto 1: ${team1.map(p => p.name).join(', ')}`;
-          } else if (inT2) {
-            const me = team2.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
-            userRole = me && me.isDriver ? "Baan 2 (JIJ RIJDT 🚘)" : "Baan 2 (Auto 2)";
-            courtInfo = `Chauffeur: ${team2[0] ? team2[0].name : '-'}\\nSpelers Auto 2: ${team2.map(p => p.name).join(', ')}`;
-          }
-        }
-
-        if (userRole) {
-          eventsToExport.push({
-            date: item.d,
-            role: userRole,
-            details: courtInfo
-          });
-        }
-      });
-
-      if (eventsToExport.length === 0) {
-        alert("Geen speeldagen gevonden om te exporteren.");
-        return;
-      }
-
-      let icsLines = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//Winter Tennis Emlichheim//NL",
-        "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH"
-      ];
-
-      eventsToExport.forEach(ev => {
-        const cleanDate = ev.date.replace(/-/g, '');
-        const uid = `tennis-${cleanDate}-${Math.random().toString(36).substring(2, 9)}@emlichheim`;
+          <div style="margin-top:4px;">🚘
