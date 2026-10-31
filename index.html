@@ -173,11 +173,11 @@
   <p style="text-align: center; color: #666; font-size: 12px; margin-top: 0;">Emlichheim | 09:30 – 11:00 uur (vertrek ca. 09:05)</p>
 
   <div class="search-container">
-    <input type="text" id="searchInput" class="search-input" placeholder="🔍 Zoek op jouw naam..." onkeyup="filterSchedule()">
-    <button id="exportCalBtn" class="btn-action btn-calendar" onclick="exportToCalendar()">
+    <input type="text" id="searchInput" class="search-input" placeholder="🔍 Zoek op jouw naam...">
+    <button id="exportCalBtn" class="btn-action btn-calendar">
       📅 Voeg alle speeldagen toe aan Agenda (.ics)
     </button>
-    <button id="shareWaBtn" class="btn-action btn-whatsapp" onclick="shareNextRoundWhatsApp()">
+    <button id="shareWaBtn" class="btn-action btn-whatsapp">
       💬 Deel komende speelronde op WhatsApp
     </button>
   </div>
@@ -206,7 +206,7 @@
     </div>
   </div>
 
-  <!-- Firebase SDK Modules -->
+  <!-- Firebase & App Script -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getFirestore, doc, onSnapshot, setDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
@@ -224,48 +224,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Globale subs cache gekoppeld aan Firestore
-    window.globalSubs = {};
-
-    // Realtime listener op Firestore voor wissels/invallers
-    const subsDocRef = doc(db, "metadata", "subs");
-    onSnapshot(subsDocRef, (snap) => {
-      if (snap.exists()) {
-        window.globalSubs = snap.data() || {};
-      } else {
-        window.globalSubs = {};
-      }
-      renderSchedule();
-      filterSchedule();
-    });
-
-    window.saveSubToFirestore = async function(dateStr, originalName, newName) {
-      try {
-        await setDoc(subsDocRef, {
-          [dateStr]: {
-            [originalName]: newName
-          }
-        }, { merge: true });
-      } catch (err) {
-        console.error("Fout bij opslaan in Firestore:", err);
-        alert("Kon de wijziging niet centraal opslaan. Controleer je internetverbinding.");
-      }
-    };
-
-    window.removeSubFromFirestore = async function(dateStr, originalName) {
-      try {
-        await setDoc(subsDocRef, {
-          [dateStr]: {
-            [originalName]: deleteField()
-          }
-        }, { merge: true });
-      } catch (err) {
-        console.error("Fout bij verwijderen uit Firestore:", err);
-      }
-    };
-  </script>
-
-  <script>
     const schema = [
       { d: "2026-09-27", a1: "Marco, Erik, Berjo, Rudie", a2: "Geert, Jan, Kasper, Koos", v: "Han, Henk, Jorrit" },
       { d: "2026-10-04", a1: "Han, Rudie, Marco, Kasper", a2: "Geert, Koos, Berjo, Fré", v: "Henk, Jan" },
@@ -307,9 +265,20 @@
     const today = new Date().toISOString().split('T')[0];
     const container = document.getElementById('schedule');
     const summaryCard = document.getElementById('summaryCard');
+    const searchInput = document.getElementById('searchInput');
+
+    let globalSubs = {};
+    const subsDocRef = doc(db, "metadata", "subs");
+
+    // Realtime luisteren naar Firestore
+    onSnapshot(subsDocRef, (snap) => {
+      globalSubs = snap.exists() ? (snap.data() || {}) : {};
+      renderSchedule();
+      filterSchedule();
+    });
 
     function getSubs() {
-      return window.globalSubs || {};
+      return globalSubs;
     }
 
     function renderPlayerChips(namesStr, dateStr) {
@@ -325,7 +294,7 @@
 
         return `
           <span class="player-chip ${isDriver ? 'is-driver' : ''} ${isSubbed ? 'is-subbed' : ''}" 
-                onclick="openSubModal('${dateStr}', '${origName.replace(/'/g, "\\'")}')"
+                onclick="window.openSubModal('${dateStr}', '${origName.replace(/'/g, "\\'")}')"
                 data-active-name="${isSubbed ? sub : origName}"
                 data-original-name="${origName}"
                 data-is-driver="${isDriver}">
@@ -351,7 +320,7 @@
 
         card.innerHTML = `
           ${isNext ? '<span class="badge">VOLGENDE SPEELRONDE</span>' : ''}
-          <button class="btn-wa-card" onclick="shareToWhatsApp('${item.d}')">💬 Deel</button>
+          <button class="btn-wa-card" onclick="window.shareToWhatsApp('${item.d}')">💬 Deel</button>
           <h2>Zondag ${formattedDate}</h2>
           <div class="group">
             <span class="label">🚗 Auto 1 (Baan 1):</span> 
@@ -371,7 +340,7 @@
     }
 
     function filterSchedule() {
-      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const query = searchInput.value.trim().toLowerCase();
       const exportBtn = document.getElementById('exportCalBtn');
       let playCount = 0;
       let driveCount = 0;
@@ -423,6 +392,8 @@
         summaryCard.style.display = "none";
       }
     }
+
+    searchInput.addEventListener('keyup', filterSchedule);
 
     let curDate = null;
     let curOriginalPlayer = null;
@@ -477,4 +448,210 @@
       };
 
       if (subs[originalPlayer]) {
-        const currentSub = subs
+        const currentSub = subs[originalPlayer];
+        const matchOption = Array.from(select.options).find(o => o.value === currentSub);
+        if (matchOption) {
+          select.value = currentSub;
+        } else {
+          select.value = "__custom__";
+          customWrap.style.display = "block";
+          customInput.value = currentSub;
+        }
+      }
+
+      document.getElementById('sub-modal').style.display = 'flex';
+    };
+
+    document.getElementById('btn-cancel').onclick = () => {
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    document.getElementById('btn-save').onclick = async () => {
+      const select = document.getElementById('sub-select');
+      let chosenName = select.value;
+
+      if (chosenName === "__custom__") {
+        chosenName = document.getElementById('custom-sub-input').value.trim();
+        if (!chosenName) {
+          alert("Vul a.u.b. een naam in voor de invaller.");
+          return;
+        }
+      }
+
+      try {
+        await setDoc(subsDocRef, {
+          [curDate]: {
+            [curOriginalPlayer]: chosenName
+          }
+        }, { merge: true });
+      } catch (err) {
+        console.error("Fout bij opslaan:", err);
+        alert("Kon de wijziging niet opslaan in de database.");
+      }
+
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    document.getElementById('btn-reset').onclick = async () => {
+      try {
+        await setDoc(subsDocRef, {
+          [curDate]: {
+            [curOriginalPlayer]: deleteField()
+          }
+        }, { merge: true });
+      } catch (err) {
+        console.error("Fout bij herstellen:", err);
+      }
+      document.getElementById('sub-modal').style.display = 'none';
+    };
+
+    window.onclick = function(event) {
+      const modal = document.getElementById('sub-modal');
+      if (event.target === modal) modal.style.display = "none";
+    };
+
+    function getCleanNamesWithDriver(namesStr, dateStr) {
+      if (!namesStr) return "Niemand";
+      const subs = getSubs()[dateStr] || {};
+      const names = namesStr.split(',').map(s => s.trim()).filter(Boolean);
+      
+      return names.map((orig, idx) => {
+        const sub = subs[orig];
+        const nameText = sub ? `${sub} (i.p.v. ${orig})` : orig;
+        return (idx === 0) ? `🚘 ${nameText} (rijdt)` : nameText;
+      }).join(', ');
+    }
+
+    function generateWhatsAppText(item) {
+      const formattedDate = item.d.split('-').reverse().join('-');
+      const auto1 = getCleanNamesWithDriver(item.a1, item.d);
+      const auto2 = getCleanNamesWithDriver(item.a2, item.d);
+      const vrij = item.v ? item.v.split(',').map(s => s.trim()).filter(Boolean).join(', ') : 'Niemand';
+
+      return `🎾 *Winter Tennis Emlichheim*\n` +
+             `📅 *Zondag ${formattedDate}* (09:30 - 11:00 uur)\n` +
+             `⏰ *Vertrek ca. 09:05 uur*\n\n` +
+             `🚗 *Auto 1 (Baan 1):*\n${auto1}\n\n` +
+             `🚗 *Auto 2 (Baan 2):*\n${auto2}\n\n` +
+             `☕ *Vrij:* ${vrij}`;
+    }
+
+    window.shareToWhatsApp = function(dateStr) {
+      const item = schema.find(s => s.d === dateStr);
+      if (!item) return;
+      const text = generateWhatsAppText(item);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    document.getElementById('shareWaBtn').onclick = function() {
+      const nextItem = schema.find(item => item.d >= today) || schema[0];
+      const text = generateWhatsAppText(nextItem);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    document.getElementById('exportCalBtn').onclick = function() {
+      const query = searchInput.value.trim().toLowerCase();
+      const subs = getSubs();
+      let eventsToExport = [];
+
+      schema.forEach(item => {
+        const getActivePlayers = (str) => {
+          if (!str) return [];
+          const orig = str.split(',').map(s => s.trim()).filter(Boolean);
+          return orig.map((p, idx) => {
+            const sub = subs[item.d] && subs[item.d][p];
+            return { name: sub || p, original: p, isDriver: idx === 0 };
+          });
+        };
+
+        const team1 = getActivePlayers(item.a1);
+        const team2 = getActivePlayers(item.a2);
+
+        let userRole = null;
+        let courtInfo = "";
+
+        if (query === "") {
+          userRole = "Tennis Emlichheim";
+          courtInfo = `Auto 1 (Baan 1): ${team1.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}\\n` +
+                      `Auto 2 (Baan 2): ${team2.map(p => (p.isDriver ? '🚘 ' : '') + p.name).join(', ')}`;
+        } else {
+          const inT1 = team1.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+          const inT2 = team2.some(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+
+          if (inT1) {
+            const me = team1.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+            userRole = me && me.isDriver ? "Baan 1 (JIJ RIJDT 🚘)" : "Baan 1 (Auto 1)";
+            courtInfo = `Chauffeur: ${team1[0] ? team1[0].name : '-'}\\nSpelers Auto 1: ${team1.map(p => p.name).join(', ')}`;
+          } else if (inT2) {
+            const me = team2.find(p => p.name.toLowerCase().includes(query) || p.original.toLowerCase().includes(query));
+            userRole = me && me.isDriver ? "Baan 2 (JIJ RIJDT 🚘)" : "Baan 2 (Auto 2)";
+            courtInfo = `Chauffeur: ${team2[0] ? team2[0].name : '-'}\\nSpelers Auto 2: ${team2.map(p => p.name).join(', ')}`;
+          }
+        }
+
+        if (userRole) {
+          eventsToExport.push({
+            date: item.d,
+            role: userRole,
+            details: courtInfo
+          });
+        }
+      });
+
+      if (eventsToExport.length === 0) {
+        alert("Geen speeldagen gevonden om te exporteren.");
+        return;
+      }
+
+      let icsLines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Winter Tennis Emlichheim//NL",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH"
+      ];
+
+      eventsToExport.forEach(ev => {
+        const cleanDate = ev.date.replace(/-/g, '');
+        const uid = `tennis-${cleanDate}-${Math.random().toString(36).substring(2, 9)}@emlichheim`;
+
+        icsLines.push(
+          "BEGIN:VEVENT",
+          `UID:${uid}`,
+          `DTSTART:${cleanDate}T093000`,
+          `DTEND:${cleanDate}T110000`,
+          `SUMMARY:🎾 Winter Tennis (${ev.role})`,
+          `DESCRIPTION:${ev.details}`,
+          "LOCATION:Tennis Emlichheim",
+          "STATUS:CONFIRMED",
+          "END:VEVENT"
+        );
+      });
+
+      icsLines.push("END:VCALENDAR");
+
+      const icsData = icsLines.join("\r\n");
+      const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8;' });
+      const downloadLink = document.createElement('a');
+
+      const filename = query 
+        ? `tennis-emlichheim-${query}.ics` 
+        : `tennis-emlichheim-volledig.ics`;
+
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.setAttribute('download', filename);
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    };
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+
+    renderSchedule();
+  </script>
+</body>
+</html>
